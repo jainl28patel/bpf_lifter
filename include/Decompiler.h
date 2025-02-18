@@ -1,0 +1,27 @@
+#pragma once
+
+#include <string>
+#include <bpf_extern.h>
+#include <elfio/elfio.hpp>
+
+using namespace ELFIO;
+
+// contains the main logic to lift each program bytecode to IR
+class Decompiler
+{
+private:
+    std::string out_file;
+
+public:
+
+    Decompiler(std::string& out_file);
+    void getIR(bpf_program* prog); //TODO: Determine return type
+    void dumpIR(bpf_program* prog);
+
+    // Elf functions
+    bool process_elf(elfio& elf);
+
+private:
+
+    Decompiler();
+};

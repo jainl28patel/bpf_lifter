@@ -13,13 +13,16 @@
 #include <filesystem>
 
 // lifting
-#include <ProgLifter.h>
+#include <Decompiler.h>
+#include <elfio/elfio.hpp>
 
+using namespace ELFIO;
 
 class Lifter
 {
 private:
-    bpf_object* objcode;
+    std::string object_file;
+    elfio elf;
 
 public:
 
