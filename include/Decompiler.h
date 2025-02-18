@@ -12,6 +12,7 @@ class Decompiler
 {
 private:
     std::string out_file;
+    std::unordered_map<std::string, FunctionData> funcs; // name -> data
 
 public:
 
@@ -20,7 +21,7 @@ public:
     void dumpIR(bpf_program* prog);
 
     // Elf functions
-    bool process_elf(elfio& elf);
+    bool process_elf(elfio& elf, std::string& object_file);
 
 private:
 

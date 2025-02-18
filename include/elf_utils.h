@@ -6,6 +6,14 @@
 
 using namespace ELFIO;
 
+struct FunctionData {
+    const char* start;
+    size_t size;
+    std::string name;
+
+    FunctionData() : size(0), name(""){}
+};
+
 struct SymbolDetails {
     Elf_Xword index;
     std::string name;
@@ -73,6 +81,7 @@ enum class ELFSection {
     UNKNOWN // Default case for unrecognized sections
 };
 
+// TODO: Remove unwanted sections
 // Map of section names to their corresponding enum values
 const std::unordered_map<std::string, ELFSection> stringToEnumMap = {
     {".text", ELFSection::TEXT},

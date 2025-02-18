@@ -16,8 +16,17 @@ void Decompiler::dumpIR(bpf_program* prog)
 {
 }
 
-bool Decompiler::process_elf(elfio &elf)
+bool Decompiler::process_elf(elfio &elf, std::string& object_file)
 {
+
+    /*  Approach
+        1. Iterate over all sections and preprocess and store all required information
+        2. Iterate over all bpf program present and convert to IR using llvm IR builder
+        3. Generate required IR information using other information obtained from elf file
+        4. Handle definition of maps, helper structs, programs, used bpf_helper_functions, section of each program etc
+        5. Compile everything into llvm::Module and get the whole IR
+    */
+
     // iterate over all section and store information
     for(auto&sec : elf.sections)
     {
@@ -28,17 +37,11 @@ bool Decompiler::process_elf(elfio &elf)
         case ELFSection::XDP:
         {
             // For now iterate over functions present and get llvm IR
-            // symbol_section_accessor sym_accessor(elf, sec.get());
-            // int sym_cnt = sym_accessor.get_symbols_num();
-            // std::cout << "cnt : " << sym_cnt << std::endl;
-            // std::cout << "class : " << elf.get_class() << std::endl;
-            // for(int sym_idx = 0; sym_idx < sym_cnt; sym_idx++)
-            // {
-            //     SymbolDetails sym_details;
-            //     sym_details.index = sym_idx;
-            //     sym_accessor.get_symbol(sym_details.index, sym_details.name, sym_details.size, sym_details.bind, sym_details.type, sym_details.section_index, sym_details.other);
-            //     std::cout << "Symbol Name : " << sym_details.name << std::endl;
-            // }
+
+            // break into different function.
+            // In ebpf function ends at syscall 'exit'. Also code after that won't be useful
+            // as ebpf doesn't allow backwards jump in the bytecode
+            
         }
         break;
         
@@ -47,6 +50,20 @@ bool Decompiler::process_elf(elfio &elf)
             break;
         }
 
+    }
+
+
+    // iterate over all programs and process them
+    bpf_object* obj = bpf_object__open(object_file.c_str());
+    bpf_program* prog;
+    bpf_object__for_each_program(prog, obj)
+    {
+        auto ins = bpf_program__insns(prog);
+        auto cnt = bpf_program__insn_cnt(prog);
+        auto sec_name = bpf_program__section_name(prog);
+
+        // we can access all required data
+        // now need to implement lifting for each function
     }
 
     return true;

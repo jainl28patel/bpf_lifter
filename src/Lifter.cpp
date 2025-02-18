@@ -28,7 +28,7 @@ void Lifter::generateIR(std::string& out_dir)
     }
 
     // preprocess elf
-    if(!decom.process_elf(elf))
+    if(!decom.process_elf(elf, this->object_file))
     {
         std::cerr << "Error in preprocessing the elf" << std::endl;
         exit(1);

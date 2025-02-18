@@ -9,6 +9,7 @@ extern "C" {
     void bpf_object__close(bpf_object *obj);
     bpf_program *bpf_object__next_program(const bpf_object *obj, bpf_program *prog);
     const char *bpf_program__name(const bpf_program *prog);
+    const char * bpf_program__section_name (const struct bpf_program *prog);
     bpf_object *bpf_object__open(const char *path);
     const bpf_insn *bpf_program__insns(const bpf_program *prog);
     size_t bpf_program__insn_cnt(const bpf_program *prog);
