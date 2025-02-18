@@ -3,6 +3,7 @@
 #include <string>
 #include <bpf_extern.h>
 #include <elfio/elfio.hpp>
+#include <elf_utils.h>
 
 using namespace ELFIO;
 

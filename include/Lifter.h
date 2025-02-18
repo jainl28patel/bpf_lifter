@@ -14,6 +14,7 @@
 
 // lifting
 #include <Decompiler.h>
+#include <elf_utils.h>
 #include <elfio/elfio.hpp>
 
 using namespace ELFIO;

@@ -14,7 +14,7 @@ endif()
 include_directories(${PROJECT_SOURCE_DIR}/ELFIO)
 
 # Create a static lib from src
-add_library(${PROJECT_NAME} STATIC src/Lifter.cpp src/Decompiler.cpp)
+add_library(${PROJECT_NAME} STATIC src/Lifter.cpp src/Decompiler.cpp src/elf_utils.cpp)
 target_include_directories(${PROJECT_NAME} PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(${PROJECT_NAME} PUBLIC ${LIBBPF})
 
