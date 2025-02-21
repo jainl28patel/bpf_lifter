@@ -1,11 +1,22 @@
 #pragma once
 
 #include <string>
+#include <vector>
+
+// from source code
 #include <bpf_extern.h>
 #include <elfio/elfio.hpp>
 #include <elf_utils.h>
+#include <bpf_utils.h>
+
+// llvm
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/DerivedTypes.h>
 
 using namespace ELFIO;
+using namespace llvm;
 
 // contains the main logic to lift each program bytecode to IR
 class Decompiler
@@ -26,4 +37,5 @@ public:
 private:
 
     Decompiler();
+    void lift_program(bpf_program* prog);
 };

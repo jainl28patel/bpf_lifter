@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unistd.h>
+#include <linux/bpf.h>
 
 extern "C" {
     struct bpf_object;
