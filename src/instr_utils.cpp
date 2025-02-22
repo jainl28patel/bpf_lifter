@@ -18,6 +18,10 @@ bool isValidBPFInstruction(bpf_insn &instruction)
 	return true;
 }
 
+bool is_alu64(const bpf_insn &insn)
+{
+    return (insn.code & 0x07) == EBPF_CLS_ALU64;
+}
 
 llvm::Value *emitLoadALUSource(const bpf_insn &inst, llvm::Value **regs,
 			       llvm::IRBuilder<> &builder)
@@ -148,25 +152,25 @@ llvm::Value *emitStoreLoadingSrc(const bpf_insn &inst,
 	}
 }
 
-// void emitStoreWritingResult(const bpf_insn &inst, llvm::IRBuilder<> &builder,
-// 			    llvm::Value **regs, llvm::Value *result)
-// {
-// 	builder.CreateStore(
-// 		result, builder.CreateGEP(builder.getInt8Ty(),
-// 					  builder.CreateLoad(builder.getPtrTy(),
-// 							     regs[inst.dst_reg]),
-// 					  { builder.getInt64(inst.off) }));
-// }
+void emitStoreWritingResult(const bpf_insn &inst, llvm::IRBuilder<> &builder,
+			    llvm::Value **regs, llvm::Value *result)
+{
+	builder.CreateStore(
+		result, builder.CreateGEP(builder.getInt8Ty(),
+					  builder.CreateLoad(llvm::PointerType::get(builder.getContext(), 0),
+							     regs[inst.dst_reg]),
+					  { builder.getInt64(inst.off) }));
+}
 
-// void emitStore(const bpf_insn &inst, llvm::IRBuilder<> &builder,
-// 	       llvm::Value **regs, llvm::IntegerType *destTy)
-// {
-// 	using namespace llvm;
-// 	Value *src = emitStoreLoadingSrc(inst, builder, &regs[0]);
+void emitStore(const bpf_insn &inst, llvm::IRBuilder<> &builder,
+	       llvm::Value **regs, llvm::IntegerType *destTy)
+{
+	using namespace llvm;
+	Value *src = emitStoreLoadingSrc(inst, builder, &regs[0]);
 
-// 	Value *result = builder.CreateTrunc(src, destTy);
-// 	emitStoreWritingResult(inst, builder, &regs[0], result);
-// }
+	Value *result = builder.CreateTrunc(src, destTy);
+	emitStoreWritingResult(inst, builder, &regs[0], result);
+}
 
 std::tuple<llvm::Value *, llvm::Value *, llvm::Value *>
 emitJmpLoadSrcAndDstAndZero(const bpf_insn &inst, llvm::Value **regs,
@@ -199,78 +203,78 @@ emitJmpLoadSrcAndDstAndZero(const bpf_insn &inst, llvm::Value **regs,
 	return { src, dst, zero };
 }
 
-// llvm::Expected<llvm::BasicBlock *>
-// loadJmpDstBlock(uint16_t pc, const bpf_insn &inst,
-// 		const std::map<uint16_t, llvm::BasicBlock *> &instBlocks)
-// {
-// 	uint16_t dstBlkId = pc + 1 + inst.off;
-// 	if (auto itr = instBlocks.find(dstBlkId); itr != instBlocks.end()) {
-// 		return itr->second;
-// 	} else {
-// 		return llvm::make_error<llvm::StringError>(
-// 			"Instruction at pc=" + std::to_string(pc) +
-// 				" is going to jump to an illegal position " +
-// 				std::to_string(dstBlkId),
-// 			llvm::inconvertibleErrorCode());
-// 	}
-// }
+llvm::Expected<llvm::BasicBlock *>
+loadJmpDstBlock(uint16_t pc, const bpf_insn &inst,
+		const std::map<uint16_t, llvm::BasicBlock *> &instBlocks)
+{
+	uint16_t dstBlkId = pc + 1 + inst.off;
+	if (auto itr = instBlocks.find(dstBlkId); itr != instBlocks.end()) {
+		return itr->second;
+	} else {
+		return llvm::make_error<llvm::StringError>(
+			"Instruction at pc=" + std::to_string(pc) +
+				" is going to jump to an illegal position " +
+				std::to_string(dstBlkId),
+			llvm::inconvertibleErrorCode());
+	}
+}
 
-// llvm::Expected<llvm::BasicBlock *>
-// loadCallDstBlock(uint16_t pc, const bpf_insn &inst,
-// 		 const std::map<uint16_t, llvm::BasicBlock *> &instBlocks)
-// {
-// 	uint16_t dstBlkId = pc + 1 + inst.imm;
-// 	if (auto itr = instBlocks.find(dstBlkId); itr != instBlocks.end()) {
-// 		return itr->second;
-// 	} else {
-// 		return llvm::make_error<llvm::StringError>(
-// 			"Instruction at pc=" + std::to_string(pc) +
-// 				" is going to jump to an illegal position " +
-// 				std::to_string(dstBlkId),
-// 			llvm::inconvertibleErrorCode());
-// 	}
-// }
+llvm::Expected<llvm::BasicBlock *>
+loadCallDstBlock(uint16_t pc, const bpf_insn &inst,
+		 const std::map<uint16_t, llvm::BasicBlock *> &instBlocks)
+{
+	uint16_t dstBlkId = pc + 1 + inst.imm;
+	if (auto itr = instBlocks.find(dstBlkId); itr != instBlocks.end()) {
+		return itr->second;
+	} else {
+		return llvm::make_error<llvm::StringError>(
+			"Instruction at pc=" + std::to_string(pc) +
+				" is going to jump to an illegal position " +
+				std::to_string(dstBlkId),
+			llvm::inconvertibleErrorCode());
+	}
+}
 
-// llvm::Expected<llvm::BasicBlock *>
-// loadJmpNextBlock(uint16_t pc, const bpf_insn &inst,
-// 		 const std::map<uint16_t, llvm::BasicBlock *> &instBlocks)
-// {
-// 	uint16_t nextBlkId = pc + 1;
-// 	if (auto itr = instBlocks.find(nextBlkId); itr != instBlocks.end()) {
-// 		return itr->second;
-// 	} else {
-// 		return llvm::make_error<llvm::StringError>(
-// 			"Instruction at pc=" + std::to_string(pc) +
-// 				" is going to jump to an illegal position " +
-// 				std::to_string(nextBlkId),
-// 			llvm::inconvertibleErrorCode());
-// 	}
-// }
+llvm::Expected<llvm::BasicBlock *>
+loadJmpNextBlock(uint16_t pc, const bpf_insn &inst,
+		 const std::map<uint16_t, llvm::BasicBlock *> &instBlocks)
+{
+	uint16_t nextBlkId = pc + 1;
+	if (auto itr = instBlocks.find(nextBlkId); itr != instBlocks.end()) {
+		return itr->second;
+	} else {
+		return llvm::make_error<llvm::StringError>(
+			"Instruction at pc=" + std::to_string(pc) +
+				" is going to jump to an illegal position " +
+				std::to_string(nextBlkId),
+			llvm::inconvertibleErrorCode());
+	}
+}
 
-// llvm::Expected<std::pair<llvm::BasicBlock *, llvm::BasicBlock *> >
-// localJmpDstAndNextBlk(uint16_t pc, const bpf_insn &inst,
-// 		      const std::map<uint16_t, llvm::BasicBlock *> &instBlocks)
-// {
-// 	if (auto dst = loadJmpDstBlock(pc, inst, instBlocks); dst) {
-// 		if (auto next = loadJmpNextBlock(pc, inst, instBlocks); next) {
-// 			return std::make_pair(dst.get(), next.get());
-// 		} else {
-// 			return next.takeError();
-// 		}
-// 	} else {
-// 		return dst.takeError();
-// 	}
-// }
+llvm::Expected<std::pair<llvm::BasicBlock *, llvm::BasicBlock *> >
+localJmpDstAndNextBlk(uint16_t pc, const bpf_insn &inst,
+		      const std::map<uint16_t, llvm::BasicBlock *> &instBlocks)
+{
+	if (auto dst = loadJmpDstBlock(pc, inst, instBlocks); dst) {
+		if (auto next = loadJmpNextBlock(pc, inst, instBlocks); next) {
+			return std::make_pair(dst.get(), next.get());
+		} else {
+			return next.takeError();
+		}
+	} else {
+		return dst.takeError();
+	}
+}
 
-// llvm::Value *emitLDXLoadingAddr(llvm::IRBuilder<> &builder, llvm::Value **regs,
-// 				const bpf_insn &inst)
-// {
-// 	// [rX + OFFSET]
-// 	return builder.CreateGEP(builder.getInt8Ty(),
-// 				 builder.CreateLoad(builder.getPtrTy(),
-// 						    regs[inst.src_reg]),
-// 				 { builder.getInt64(inst.off) });
-// }
+llvm::Value *emitLDXLoadingAddr(llvm::IRBuilder<> &builder, llvm::Value **regs,
+				const bpf_insn &inst)
+{
+	// [rX + OFFSET]
+	return builder.CreateGEP(builder.getInt8Ty(),
+				 builder.CreateLoad(llvm::PointerType::get(builder.getContext(), 0),
+						    regs[inst.src_reg]),
+				 { builder.getInt64(inst.off) });
+}
 
 void emitLDXStoringResult(llvm::IRBuilder<> &builder, llvm::Value **regs,
 			  const bpf_insn &inst, llvm::Value *result)
@@ -281,31 +285,31 @@ void emitLDXStoringResult(llvm::IRBuilder<> &builder, llvm::Value **regs,
 			    regs[inst.dst_reg]);
 }
 
-// void emitLoadX(llvm::IRBuilder<> &builder, llvm::Value **regs,
-// 	       const bpf_insn &inst, llvm::IntegerType *srcTy)
-// {
-// 	using namespace llvm;
-// 	Value *addr = emitLDXLoadingAddr(builder, &regs[0], inst);
-// 	Value *result = builder.CreateLoad(srcTy, addr);
-// 	emitLDXStoringResult(builder, &regs[0], inst, result);
-// }
+void emitLoadX(llvm::IRBuilder<> &builder, llvm::Value **regs,
+	       const bpf_insn &inst, llvm::IntegerType *srcTy)
+{
+	using namespace llvm;
+	Value *addr = emitLDXLoadingAddr(builder, &regs[0], inst);
+	Value *result = builder.CreateLoad(srcTy, addr);
+	emitLDXStoringResult(builder, &regs[0], inst, result);
+}
 
-// llvm::Expected<int> emitCondJmpWithDstAndSrc(
-// 	llvm::IRBuilder<> &builder, uint16_t pc, const bpf_insn &inst,
-// 	const std::map<uint16_t, llvm::BasicBlock *> &instBlocks,
-// 	llvm::Value **regs,
-// 	std::function<llvm::Value *(llvm::Value *, llvm::Value *)> func)
-// {
-// 	if (auto ret = localJmpDstAndNextBlk(pc, inst, instBlocks); ret) {
-// 		auto [dstBlk, nextBlk] = ret.get();
-// 		auto [src, dst, _] =
-// 			emitJmpLoadSrcAndDstAndZero(inst, &regs[0], builder);
-// 		builder.CreateCondBr(func(dst, src), dstBlk, nextBlk);
-// 		return 0;
-// 	} else {
-// 		return ret.takeError();
-// 	}
-// }
+llvm::Expected<int> emitCondJmpWithDstAndSrc(
+	llvm::IRBuilder<> &builder, uint16_t pc, const bpf_insn &inst,
+	const std::map<uint16_t, llvm::BasicBlock *> &instBlocks,
+	llvm::Value **regs,
+	std::function<llvm::Value *(llvm::Value *, llvm::Value *)> func)
+{
+	if (auto ret = localJmpDstAndNextBlk(pc, inst, instBlocks); ret) {
+		auto [dstBlk, nextBlk] = ret.get();
+		auto [src, dst, _] =
+			emitJmpLoadSrcAndDstAndZero(inst, &regs[0], builder);
+		builder.CreateCondBr(func(dst, src), dstBlk, nextBlk);
+		return 0;
+	} else {
+		return ret.takeError();
+	}
+}
 
 // llvm::Expected<int>
 // emitExtFuncCall(llvm::IRBuilder<> &builder, const bpf_insn &inst,
@@ -346,24 +350,24 @@ void emitLDXStoringResult(llvm::IRBuilder<> &builder, llvm::Value **regs,
 // 	}
 // }
 
-// void emitAtomicBinOp(llvm::IRBuilder<> &builder, llvm::Value **regs,
-// 		     llvm::AtomicRMWInst::BinOp op, const bpf_insn &inst,
-// 		     bool is64, bool is_fetch)
-// {
-// 	auto oldValue = builder.CreateAtomicRMW(
-// 		op,
-// 		builder.CreateGEP(builder.getInt8Ty(),
-// 				  builder.CreateLoad(builder.getPtrTy(),
-// 						     regs[inst.dst_reg]),
-// 				  { builder.getInt64(inst.off) }),
-// 		is64 ? builder.CreateLoad(builder.getInt64Ty(),
-// 					  regs[inst.src_reg]) :
-// 		       builder.CreateTrunc(
-// 			       builder.CreateLoad(builder.getInt64Ty(),
-// 						  regs[inst.src_reg]),
-// 			       builder.getInt32Ty()),
-// 		llvm::MaybeAlign(32), llvm::AtomicOrdering::Monotonic);
-// 	if (is_fetch) {
-// 		builder.CreateStore(oldValue, regs[inst.src_reg]);
-// 	}
-// }
+void emitAtomicBinOp(llvm::IRBuilder<> &builder, llvm::Value **regs,
+		     llvm::AtomicRMWInst::BinOp op, const bpf_insn &inst,
+		     bool is64, bool is_fetch)
+{
+	auto oldValue = builder.CreateAtomicRMW(
+		op,
+		builder.CreateGEP(builder.getInt8Ty(),
+				  builder.CreateLoad(llvm::PointerType::get(builder.getContext(), 0),
+						     regs[inst.dst_reg]),
+				  { builder.getInt64(inst.off) }),
+		is64 ? builder.CreateLoad(builder.getInt64Ty(),
+					  regs[inst.src_reg]) :
+		       builder.CreateTrunc(
+			       builder.CreateLoad(builder.getInt64Ty(),
+						  regs[inst.src_reg]),
+			       builder.getInt32Ty()),
+		llvm::MaybeAlign(32), llvm::AtomicOrdering::Monotonic);
+	if (is_fetch) {
+		builder.CreateStore(oldValue, regs[inst.src_reg]);
+	}
+}

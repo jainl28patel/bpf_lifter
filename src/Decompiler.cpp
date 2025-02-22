@@ -251,14 +251,25 @@ void Decompiler::lift_program(bpf_program *prog)
 		case EBPF_OP_SUB_IMM:
 		case EBPF_OP_SUB64_REG:
 		case EBPF_OP_SUB_REG: {
-
+            emitALUWithDstAndSrc(
+				inst, builder, &regs[0],
+				[&](Value *dst_val, Value *src_val) {
+					return builder.CreateSub(dst_val,
+								 src_val);
+				});
 			break;
 		}
 		case EBPF_OP_MUL64_IMM:
 		case EBPF_OP_MUL_IMM:
 		case EBPF_OP_MUL64_REG:
 		case EBPF_OP_MUL_REG: {
-
+            emitALUWithDstAndSrc(
+				inst, builder, &regs[0],
+				[&](Value *dst_val, Value *src_val) {
+					return builder.CreateBinOp(
+						Instruction::BinaryOps::Mul,
+						dst_val, src_val);
+				});
 			break;
 		}
 		case EBPF_OP_DIV64_IMM:
@@ -268,72 +279,183 @@ void Decompiler::lift_program(bpf_program *prog)
 			// Set dst to zero if trying to being divided by
 			// zero
 
+            emitALUWithDstAndSrc(
+				inst, builder, &regs[0],
+				[&](Value *dst_val, Value *src_val) {
+					bool is64 = (inst.code & 0x07) ==
+						    EBPF_CLS_ALU64;
+					auto result = builder.CreateSelect(
+						builder.CreateICmpEQ(
+							src_val,
+							is64 ? builder.getInt64(
+								       0) :
+							       builder.getInt32(
+								       0)),
+						is_alu64(inst) ?
+							builder.getInt64(0) :
+							builder.getInt32(0),
+						builder.CreateUDiv(dst_val,
+								   src_val));
+					return result;
+				});
+
+			;
 			break;
 		}
 		case EBPF_OP_OR64_IMM:
 		case EBPF_OP_OR_IMM:
 		case EBPF_OP_OR64_REG:
 		case EBPF_OP_OR_REG: {
-
+            emitALUWithDstAndSrc(
+				inst, builder, &regs[0],
+				[&](Value *dst_val, Value *src_val) {
+					return builder.CreateOr(dst_val,
+								src_val);
+				});
 			break;
 		}
 		case EBPF_OP_AND64_IMM:
 		case EBPF_OP_AND_IMM:
 		case EBPF_OP_AND64_REG:
 		case EBPF_OP_AND_REG: {
-
+            emitALUWithDstAndSrc(
+				inst, builder, &regs[0],
+				[&](Value *dst_val, Value *src_val) {
+					return builder.CreateAnd(dst_val,
+								 src_val);
+				});
 			break;
 		}
 		case EBPF_OP_LSH64_IMM:
 		case EBPF_OP_LSH_IMM:
 		case EBPF_OP_LSH64_REG:
 		case EBPF_OP_LSH_REG: {
-
+            emitALUWithDstAndSrc(
+				inst, builder, &regs[0],
+				[&](Value *dst_val, Value *src_val) {
+					return builder.CreateShl(
+						dst_val,
+						is_alu64(inst) ?
+							builder.CreateURem(
+								src_val,
+								builder.getInt64(
+									64)) :
+							builder.CreateURem(
+								src_val,
+								builder.getInt32(
+									32)));
+				});
 			break;
 		}
 		case EBPF_OP_RSH64_IMM:
 		case EBPF_OP_RSH_IMM:
 		case EBPF_OP_RSH64_REG:
 		case EBPF_OP_RSH_REG: {
-
+            emitALUWithDstAndSrc(
+				inst, builder, &regs[0],
+				[&](Value *dst_val, Value *src_val) {
+					return builder.CreateLShr(
+						dst_val,
+						is_alu64(inst) ?
+							builder.CreateURem(
+								src_val,
+								builder.getInt64(
+									64)) :
+							builder.CreateURem(
+								src_val,
+								builder.getInt32(
+									32)));
+				});
 			break;
 		}
 		case EBPF_OP_NEG:
 		case EBPF_OP_NEG64: {
-
+            Value *dst_val =
+				emitLoadALUDest(inst, &regs[0], builder, false);
+			Value *result = builder.CreateNeg(dst_val);
+			emitStoreALUResult(inst, &regs[0], builder, result);
 			break;
 		}
 		case EBPF_OP_MOD64_IMM:
 		case EBPF_OP_MOD_IMM:
 		case EBPF_OP_MOD64_REG:
 		case EBPF_OP_MOD_REG: {
-
+            emitALUWithDstAndSrc(
+				inst, builder, &regs[0],
+				[&](Value *dst_val, Value *src_val) {
+					// Keep dst untouched is src is
+					// zero
+					return builder.CreateSelect(
+						builder.CreateICmpEQ(
+							src_val,
+							is_alu64(inst) ?
+								builder.getInt64(
+									0) :
+								builder.getInt32(
+									0)),
+						dst_val,
+						builder.CreateURem(dst_val,
+								   src_val));
+				});
 			break;
 		}
 		case EBPF_OP_XOR64_IMM:
 		case EBPF_OP_XOR_IMM:
 		case EBPF_OP_XOR64_REG:
 		case EBPF_OP_XOR_REG: {
-
+            emitALUWithDstAndSrc(
+				inst, builder, &regs[0],
+				[&](Value *dst_val, Value *src_val) {
+					return builder.CreateXor(dst_val,
+								 src_val);
+				});
 			break;
 		}
 		case EBPF_OP_MOV64_IMM:
 		case EBPF_OP_MOV_IMM:
 		case EBPF_OP_MOV64_REG:
 		case EBPF_OP_MOV_REG: {
-
+            Value *src_val =
+				emitLoadALUSource(inst, &regs[0], builder);
+			Value *result = src_val;
+			emitStoreALUResult(inst, &regs[0], builder, result);
 			break;
 		}
 		case EBPF_OP_ARSH64_IMM:
 		case EBPF_OP_ARSH_IMM:
 		case EBPF_OP_ARSH64_REG:
 		case EBPF_OP_ARSH_REG: {
-
+            emitALUWithDstAndSrc(
+				inst, builder, &regs[0],
+				[&](Value *dst_val, Value *src_val) {
+					return builder.CreateAShr(
+						dst_val,
+						is_alu64(inst) ?
+							builder.CreateURem(
+								src_val,
+								builder.getInt64(
+									64)) :
+							builder.CreateURem(
+								src_val,
+								builder.getInt32(
+									32)));
+				});
 			break;
 		}
 		case EBPF_OP_LE:
 		case EBPF_OP_BE: {
-
+            Value *dst_val =
+				emitLoadALUDest(inst, &regs[0], builder, true);
+			Value *result;
+			if (auto exp = emitALUEndianConversion(inst, builder,
+							       dst_val);
+			    exp) {
+				result = exp.get();
+			} else {
+                // TODO: Handle error
+				// return exp.takeError();
+			}
+			emitStoreALUResult(inst, &regs[0], builder, result);
 			break;
 		}
 
@@ -341,38 +463,40 @@ void Decompiler::lift_program(bpf_program *prog)
 			//  Only supports mode = 0x60
 		case EBPF_OP_STB:
 		case EBPF_OP_STXB: {
+            emitStore(inst, builder, &regs[0], builder.getInt8Ty());
 			break;
 		}
 		case EBPF_OP_STH:
 		case EBPF_OP_STXH: {
-
+            emitStore(inst, builder, &regs[0], builder.getInt16Ty());
 			break;
 		}
 		case EBPF_OP_STW:
 		case EBPF_OP_STXW: {
-
+            emitStore(inst, builder, &regs[0], builder.getInt32Ty());
 			break;
 		}
 		case EBPF_OP_STDW:
 		case EBPF_OP_STXDW: {
-
+            emitStore(inst, builder, &regs[0], builder.getInt64Ty());
 			break;
 		}
 			// LDX
 			// Only supports mode=0x60
 		case EBPF_OP_LDXB: {
+            emitLoadX(builder, &regs[0], inst, builder.getInt8Ty());
 			break;
 		}
 		case EBPF_OP_LDXH: {
-
+            emitLoadX(builder, &regs[0], inst, builder.getInt16Ty());
 			break;
 		}
 		case EBPF_OP_LDXW: {
-
+            emitLoadX(builder, &regs[0], inst, builder.getInt32Ty());
 			break;
 		}
 		case EBPF_OP_LDXDW: {
-
+            emitLoadX(builder, &regs[0], inst, builder.getInt64Ty());
 			break;
 		}
 		// LD
@@ -380,11 +504,19 @@ void Decompiler::lift_program(bpf_program *prog)
 		case EBPF_OP_LDDW: {
 			// ubpf only supports EBPF_OP_LDDW in instruction class
 			// EBPF_CLS_LD, so do us
+            // TODO: Implement this part
 			break;
 		}
 			// JMP
 		case EBPF_OP_JA: {
+            if (auto dst = loadJmpDstBlock(pc, inst, instBlocks);
+			    dst) {
+				builder.CreateBr(dst.get());
 
+			} else {
+                // TODO: Handler error
+				// return dst.takeError();
+			}
 			break;
 		}
 			// Call helper or local function
@@ -393,20 +525,30 @@ void Decompiler::lift_program(bpf_program *prog)
 			// that we don't support
 		case EBPF_OP_CALL | 0x8: {
 			// Call local function
-
-
+            // TODO: Implement
 			break;
 		}
 		case EBPF_OP_EXIT: {
-
+            // TODO: Implement
 			break;
 		}
+
+        // TODO: Implement error handler
+#define HANDLE_ERR(ret)                                                        \
+    {                                                                      \
+        if (!ret);                                                      \                               
+    }
+    
 
 		case EBPF_OP_JEQ32_IMM:
 		case EBPF_OP_JEQ_IMM:
 		case EBPF_OP_JEQ32_REG:
 		case EBPF_OP_JEQ_REG: {
-
+            HANDLE_ERR(emitCondJmpWithDstAndSrc(
+				builder, pc, inst, instBlocks, &regs[0],
+				[&](auto dst, auto src) {
+					return builder.CreateICmpEQ(dst, src);
+				}));
 			break;
 		}
 
@@ -414,70 +556,121 @@ void Decompiler::lift_program(bpf_program *prog)
 		case EBPF_OP_JGT_IMM:
 		case EBPF_OP_JGT32_REG:
 		case EBPF_OP_JGT_REG: {
-
+            HANDLE_ERR(emitCondJmpWithDstAndSrc(
+				builder, pc, inst, instBlocks, &regs[0],
+				[&](auto dst, auto src) {
+					return builder.CreateICmpUGT(dst, src);
+				}));
 			break;
 		}
 		case EBPF_OP_JGE32_IMM:
 		case EBPF_OP_JGE_IMM:
 		case EBPF_OP_JGE32_REG:
 		case EBPF_OP_JGE_REG: {
-
+            HANDLE_ERR(emitCondJmpWithDstAndSrc(
+				builder, pc, inst, instBlocks, &regs[0],
+				[&](auto dst, auto src) {
+					return builder.CreateICmpUGE(dst, src);
+				}));
 			break;
 		}
 		case EBPF_OP_JSET32_IMM:
 		case EBPF_OP_JSET_IMM:
 		case EBPF_OP_JSET32_REG:
 		case EBPF_OP_JSET_REG: {
-
+            if (auto ret =
+                    localJmpDstAndNextBlk(pc, inst, instBlocks);
+                ret) {
+                auto [dstBlk, nextBlk] = ret.get();
+                auto [src, dst, zero] =
+                    emitJmpLoadSrcAndDstAndZero(
+                        inst, &regs[0], builder);
+                builder.CreateCondBr(
+                    builder.CreateICmpNE(
+                        builder.CreateAnd(dst, src),
+                        zero),
+                    dstBlk, nextBlk);
+            } else {
+                // TODO
+                // return ret.takeError();
+            }
 			break;
 		}
 		case EBPF_OP_JNE32_IMM:
 		case EBPF_OP_JNE_IMM:
 		case EBPF_OP_JNE32_REG:
 		case EBPF_OP_JNE_REG: {
-
+            HANDLE_ERR(emitCondJmpWithDstAndSrc(
+				builder, pc, inst, instBlocks, &regs[0],
+				[&](auto dst, auto src) {
+					return builder.CreateICmpNE(dst, src);
+				}));
 			break;
 		}
 		case EBPF_OP_JSGT32_IMM:
 		case EBPF_OP_JSGT_IMM:
 		case EBPF_OP_JSGT32_REG:
 		case EBPF_OP_JSGT_REG: {
-
+            HANDLE_ERR(emitCondJmpWithDstAndSrc(
+				builder, pc, inst, instBlocks, &regs[0],
+				[&](auto dst, auto src) {
+					return builder.CreateICmpSGT(dst, src);
+				}));
 			break;
 		}
 		case EBPF_OP_JSGE32_IMM:
 		case EBPF_OP_JSGE_IMM:
 		case EBPF_OP_JSGE32_REG:
 		case EBPF_OP_JSGE_REG: {
-
+            HANDLE_ERR(emitCondJmpWithDstAndSrc(
+				builder, pc, inst, instBlocks, &regs[0],
+				[&](auto dst, auto src) {
+					return builder.CreateICmpSGE(dst, src);
+				}));
 			break;
 		}
 		case EBPF_OP_JLT32_IMM:
 		case EBPF_OP_JLT_IMM:
 		case EBPF_OP_JLT32_REG:
 		case EBPF_OP_JLT_REG: {
-
+            HANDLE_ERR(emitCondJmpWithDstAndSrc(
+				builder, pc, inst, instBlocks, &regs[0],
+				[&](auto dst, auto src) {
+					return builder.CreateICmpULT(dst, src);
+				}));
 			break;
 		}
 		case EBPF_OP_JLE32_IMM:
 		case EBPF_OP_JLE_IMM:
 		case EBPF_OP_JLE32_REG:
 		case EBPF_OP_JLE_REG: {
-
+            HANDLE_ERR(emitCondJmpWithDstAndSrc(
+				builder, pc, inst, instBlocks, &regs[0],
+				[&](auto dst, auto src) {
+					return builder.CreateICmpULE(dst, src);
+				}));
 			break;
 		}
 		case EBPF_OP_JSLT32_IMM:
 		case EBPF_OP_JSLT_IMM:
 		case EBPF_OP_JSLT32_REG:
 		case EBPF_OP_JSLT_REG: {
-
+            HANDLE_ERR(emitCondJmpWithDstAndSrc(
+				builder, pc, inst, instBlocks, &regs[0],
+				[&](auto dst, auto src) {
+					return builder.CreateICmpSLT(dst, src);
+				}));
 			break;
 		}
 		case EBPF_OP_JSLE32_IMM:
 		case EBPF_OP_JSLE_IMM:
 		case EBPF_OP_JSLE32_REG:
 		case EBPF_OP_JSLE_REG: {
-
+            HANDLE_ERR(emitCondJmpWithDstAndSrc(
+				builder, pc, inst, instBlocks, &regs[0],
+				[&](auto dst, auto src) {
+					return builder.CreateICmpSLE(dst, src);
+				}));
 			break;
 		}
 		case EBPF_ATOMIC_OPCODE_32:
@@ -485,31 +678,83 @@ void Decompiler::lift_program(bpf_program *prog)
 			switch (inst.imm) {
 			case EBPF_ATOMIC_ADD:
 			case EBPF_ATOMIC_ADD | EBPF_ATOMIC_OP_FETCH: {
+                emitAtomicBinOp(
+					builder, &regs[0],
+					llvm::AtomicRMWInst::BinOp::Add, inst,
+					inst.code == EBPF_ATOMIC_OPCODE_64,
+					(inst.imm & EBPF_ATOMIC_OP_FETCH) ==
+						EBPF_ATOMIC_OP_FETCH);
 				break;
 			}
 
 			case EBPF_ATOMIC_AND:
 			case EBPF_ATOMIC_AND | EBPF_ATOMIC_OP_FETCH: {
-
+                emitAtomicBinOp(
+					builder, &regs[0],
+					llvm::AtomicRMWInst::BinOp::And, inst,
+					inst.code == EBPF_ATOMIC_OPCODE_64,
+					(inst.imm & EBPF_ATOMIC_OP_FETCH) ==
+						EBPF_ATOMIC_OP_FETCH);
 				break;
 			}
 
 			case EBPF_ATOMIC_OR:
 			case EBPF_ATOMIC_OR | EBPF_ATOMIC_OP_FETCH: {
-
+                emitAtomicBinOp(
+					builder, &regs[0],
+					llvm::AtomicRMWInst::BinOp::Or, inst,
+					inst.code == EBPF_ATOMIC_OPCODE_64,
+					(inst.imm & EBPF_ATOMIC_OP_FETCH) ==
+						EBPF_ATOMIC_OP_FETCH);
 				break;
 			}
 			case EBPF_ATOMIC_XOR:
 			case EBPF_ATOMIC_XOR | EBPF_ATOMIC_OP_FETCH: {
-
+                emitAtomicBinOp(
+					builder, &regs[0],
+					llvm::AtomicRMWInst::BinOp::Xor, inst,
+					inst.code == EBPF_ATOMIC_OPCODE_64,
+					(inst.imm & EBPF_ATOMIC_OP_FETCH) ==
+						EBPF_ATOMIC_OP_FETCH);
 				break;
 			}
 			case EBPF_ATOMIC_OP_XCHG: {
-
+                emitAtomicBinOp(
+					builder, &regs[0],
+					llvm::AtomicRMWInst::BinOp::Xchg, inst,
+					inst.code == EBPF_ATOMIC_OPCODE_64,
+					false);
 				break;
 			}
 			case EBPF_ATOMIC_OP_CMPXCHG: {
-
+                bool is64 =
+					inst.code= EBPF_ATOMIC_OPCODE_64;
+				auto vPtr = builder.CreateGEP(
+					builder.getInt8Ty(),
+					builder.CreateLoad(llvm::PointerType::get(builder.getContext(), 0),
+							   regs[inst.dst_reg]),
+					{ builder.getInt64(inst.off) });
+				auto beforeVal = builder.CreateLoad(
+					is64 ? builder.getInt64Ty() :
+					       builder.getInt32Ty(),
+					vPtr);
+				builder.CreateAtomicCmpXchg(
+					vPtr,
+					builder.CreateLoad(
+						is64 ? builder.getInt64Ty() :
+						       builder.getInt32Ty(),
+						regs[0]),
+					builder.CreateLoad(
+						is64 ? builder.getInt64Ty() :
+						       builder.getInt32Ty(),
+						regs[inst.src_reg]),
+					MaybeAlign(0),
+					AtomicOrdering::Monotonic,
+					AtomicOrdering::Monotonic);
+				builder.CreateStore(
+					builder.CreateZExt(beforeVal,
+							   builder.getInt64Ty()),
+					regs[0]);
 				break;
 			}
 			default: {

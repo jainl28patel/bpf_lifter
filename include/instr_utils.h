@@ -22,6 +22,7 @@ using namespace llvm;
 
 bool is_control_flow_split(bpf_insn& instruction);
 bool isValidBPFInstruction(bpf_insn& instruction);
+bool is_alu64(const bpf_insn &insn);
 
 // IR builder for instructions
 
