@@ -7,7 +7,7 @@
 #include <bpf_extern.h>
 #include <elfio/elfio.hpp>
 #include <elf_utils.h>
-#include <bpf_utils.h>
+#include <instr_utils.h>
 
 // llvm
 #include <llvm/IR/IRBuilder.h>

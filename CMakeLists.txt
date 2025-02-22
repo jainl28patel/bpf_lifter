@@ -54,7 +54,7 @@ add_library(${PROJECT_NAME} STATIC
     src/Lifter.cpp 
     src/Decompiler.cpp 
     src/elf_utils.cpp 
-    src/bpf_utils.cpp
+    src/instr_utils.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC 

@@ -109,6 +109,48 @@ void Decompiler::lift_program(bpf_program *prog)
     Argument *mem = bpf_func->getArg(0);
     Argument *mem_len = bpf_func->getArg(1);
 
+
+    std::vector<Value *> regs;
+	std::vector<BasicBlock*> progBasicBlock;;
+	// Stack used to save return address and saved registers
+	// Value *callStack, *callItemCnt;
+	{
+		BasicBlock *setupBlock =
+			BasicBlock::Create(*context, "setupBlock", bpf_func);
+        progBasicBlock.push_back(setupBlock);
+		IRBuilder<> builder(setupBlock);
+		// Create registers
+
+		for (int i = 0; i <= 10; i++) {
+			regs.push_back(builder.CreateAlloca(
+				builder.getInt64Ty(), nullptr,
+				"r" + std::to_string(i)));
+		}
+		// // Create stack
+		// auto stackBegin = builder.CreateAlloca(
+		// 	builder.getInt64Ty(),
+		// 	builder.getInt32(STACK_SIZE * MAX_LOCAL_FUNC_DEPTH +
+		// 			 10),
+		// 	"stackBegin");
+		// auto stackEnd = builder.CreateGEP(
+		// 	builder.getInt64Ty(), stackBegin,
+		// 	{ builder.getInt32(STACK_SIZE * MAX_LOCAL_FUNC_DEPTH) },
+		// 	"stackEnd");
+		// // Write stack pointer into r10
+		// builder.CreateStore(stackEnd, regs[10]);
+		// // Write memory address into r1
+		// builder.CreateStore(mem, regs[1]);
+		// // Write memory len into r1
+		// builder.CreateStore(mem_len, regs[2]);
+
+		// callStack = builder.CreateAlloca(
+		// 	builder.getPtrTy(),
+		// 	builder.getInt32(CALL_STACK_SIZE * 5), "callStack");
+		// callItemCnt = builder.CreateAlloca(builder.getInt64Ty(),
+		// 				   nullptr, "callItemCnt");
+		// builder.CreateStore(builder.getInt64(0), callItemCnt);
+	}
+
     // Now split the instructions into basic blocks
     /*
         Basic block boundary are
@@ -140,7 +182,6 @@ void Decompiler::lift_program(bpf_program *prog)
     }
 
     // link different basic blocks
-    std::vector<BasicBlock*> progBasicBlock;
     std::map<uint16_t, BlockAddress*> localFuncRetBlock; // TODO
     std::map<uint16_t, BasicBlock*> instBlocks;
 
@@ -171,7 +212,7 @@ void Decompiler::lift_program(bpf_program *prog)
     IRBuilder<> builder(currBlock);
 
     for(uint16_t pc = 0; pc < instructions.size(); pc++) {
-        auto& curr_inst = instructions[pc];
+        auto& inst = instructions[pc];
 
         // if new basic block start
         if(basicBlockStart[pc]) {
@@ -187,20 +228,306 @@ void Decompiler::lift_program(bpf_program *prog)
 
         // instruction validation checks
         // TODO: Add more checks
-        if(!isValidBPFInstruction(curr_inst)) {
+        if(!isValidBPFInstruction(inst)) {
             throw "INVALID bpf instruction";
         }
 
         // TODO: Lift instructions
-        // switch (curr_inst.code)
-        // {
-        // case 0:
-        //     /* code */
-        //     break;
-        
-        // default:
-        //     break;
-        // }
+		switch (inst.code) {
+			// ALU
+		case EBPF_OP_ADD64_IMM:
+		case EBPF_OP_ADD_IMM:
+		case EBPF_OP_ADD64_REG:
+		case EBPF_OP_ADD_REG: {
+			emitALUWithDstAndSrc(
+				inst, builder, &regs[0],
+				[&](Value *dst_val, Value *src_val) {
+					return builder.CreateAdd(dst_val,
+								 src_val);
+				});
+			break;
+		}
+		case EBPF_OP_SUB64_IMM:
+		case EBPF_OP_SUB_IMM:
+		case EBPF_OP_SUB64_REG:
+		case EBPF_OP_SUB_REG: {
+
+			break;
+		}
+		case EBPF_OP_MUL64_IMM:
+		case EBPF_OP_MUL_IMM:
+		case EBPF_OP_MUL64_REG:
+		case EBPF_OP_MUL_REG: {
+
+			break;
+		}
+		case EBPF_OP_DIV64_IMM:
+		case EBPF_OP_DIV_IMM:
+		case EBPF_OP_DIV64_REG:
+		case EBPF_OP_DIV_REG: {
+			// Set dst to zero if trying to being divided by
+			// zero
+
+			break;
+		}
+		case EBPF_OP_OR64_IMM:
+		case EBPF_OP_OR_IMM:
+		case EBPF_OP_OR64_REG:
+		case EBPF_OP_OR_REG: {
+
+			break;
+		}
+		case EBPF_OP_AND64_IMM:
+		case EBPF_OP_AND_IMM:
+		case EBPF_OP_AND64_REG:
+		case EBPF_OP_AND_REG: {
+
+			break;
+		}
+		case EBPF_OP_LSH64_IMM:
+		case EBPF_OP_LSH_IMM:
+		case EBPF_OP_LSH64_REG:
+		case EBPF_OP_LSH_REG: {
+
+			break;
+		}
+		case EBPF_OP_RSH64_IMM:
+		case EBPF_OP_RSH_IMM:
+		case EBPF_OP_RSH64_REG:
+		case EBPF_OP_RSH_REG: {
+
+			break;
+		}
+		case EBPF_OP_NEG:
+		case EBPF_OP_NEG64: {
+
+			break;
+		}
+		case EBPF_OP_MOD64_IMM:
+		case EBPF_OP_MOD_IMM:
+		case EBPF_OP_MOD64_REG:
+		case EBPF_OP_MOD_REG: {
+
+			break;
+		}
+		case EBPF_OP_XOR64_IMM:
+		case EBPF_OP_XOR_IMM:
+		case EBPF_OP_XOR64_REG:
+		case EBPF_OP_XOR_REG: {
+
+			break;
+		}
+		case EBPF_OP_MOV64_IMM:
+		case EBPF_OP_MOV_IMM:
+		case EBPF_OP_MOV64_REG:
+		case EBPF_OP_MOV_REG: {
+
+			break;
+		}
+		case EBPF_OP_ARSH64_IMM:
+		case EBPF_OP_ARSH_IMM:
+		case EBPF_OP_ARSH64_REG:
+		case EBPF_OP_ARSH_REG: {
+
+			break;
+		}
+		case EBPF_OP_LE:
+		case EBPF_OP_BE: {
+
+			break;
+		}
+
+			// ST and STX
+			//  Only supports mode = 0x60
+		case EBPF_OP_STB:
+		case EBPF_OP_STXB: {
+			break;
+		}
+		case EBPF_OP_STH:
+		case EBPF_OP_STXH: {
+
+			break;
+		}
+		case EBPF_OP_STW:
+		case EBPF_OP_STXW: {
+
+			break;
+		}
+		case EBPF_OP_STDW:
+		case EBPF_OP_STXDW: {
+
+			break;
+		}
+			// LDX
+			// Only supports mode=0x60
+		case EBPF_OP_LDXB: {
+			break;
+		}
+		case EBPF_OP_LDXH: {
+
+			break;
+		}
+		case EBPF_OP_LDXW: {
+
+			break;
+		}
+		case EBPF_OP_LDXDW: {
+
+			break;
+		}
+		// LD
+		// Keep compatiblity to ubpf
+		case EBPF_OP_LDDW: {
+			// ubpf only supports EBPF_OP_LDDW in instruction class
+			// EBPF_CLS_LD, so do us
+			break;
+		}
+			// JMP
+		case EBPF_OP_JA: {
+
+			break;
+		}
+			// Call helper or local function
+		case EBPF_OP_CALL:
+			// Work around for clang producing instructions
+			// that we don't support
+		case EBPF_OP_CALL | 0x8: {
+			// Call local function
+
+
+			break;
+		}
+		case EBPF_OP_EXIT: {
+
+			break;
+		}
+
+		case EBPF_OP_JEQ32_IMM:
+		case EBPF_OP_JEQ_IMM:
+		case EBPF_OP_JEQ32_REG:
+		case EBPF_OP_JEQ_REG: {
+
+			break;
+		}
+
+		case EBPF_OP_JGT32_IMM:
+		case EBPF_OP_JGT_IMM:
+		case EBPF_OP_JGT32_REG:
+		case EBPF_OP_JGT_REG: {
+
+			break;
+		}
+		case EBPF_OP_JGE32_IMM:
+		case EBPF_OP_JGE_IMM:
+		case EBPF_OP_JGE32_REG:
+		case EBPF_OP_JGE_REG: {
+
+			break;
+		}
+		case EBPF_OP_JSET32_IMM:
+		case EBPF_OP_JSET_IMM:
+		case EBPF_OP_JSET32_REG:
+		case EBPF_OP_JSET_REG: {
+
+			break;
+		}
+		case EBPF_OP_JNE32_IMM:
+		case EBPF_OP_JNE_IMM:
+		case EBPF_OP_JNE32_REG:
+		case EBPF_OP_JNE_REG: {
+
+			break;
+		}
+		case EBPF_OP_JSGT32_IMM:
+		case EBPF_OP_JSGT_IMM:
+		case EBPF_OP_JSGT32_REG:
+		case EBPF_OP_JSGT_REG: {
+
+			break;
+		}
+		case EBPF_OP_JSGE32_IMM:
+		case EBPF_OP_JSGE_IMM:
+		case EBPF_OP_JSGE32_REG:
+		case EBPF_OP_JSGE_REG: {
+
+			break;
+		}
+		case EBPF_OP_JLT32_IMM:
+		case EBPF_OP_JLT_IMM:
+		case EBPF_OP_JLT32_REG:
+		case EBPF_OP_JLT_REG: {
+
+			break;
+		}
+		case EBPF_OP_JLE32_IMM:
+		case EBPF_OP_JLE_IMM:
+		case EBPF_OP_JLE32_REG:
+		case EBPF_OP_JLE_REG: {
+
+			break;
+		}
+		case EBPF_OP_JSLT32_IMM:
+		case EBPF_OP_JSLT_IMM:
+		case EBPF_OP_JSLT32_REG:
+		case EBPF_OP_JSLT_REG: {
+
+			break;
+		}
+		case EBPF_OP_JSLE32_IMM:
+		case EBPF_OP_JSLE_IMM:
+		case EBPF_OP_JSLE32_REG:
+		case EBPF_OP_JSLE_REG: {
+
+			break;
+		}
+		case EBPF_ATOMIC_OPCODE_32:
+		case EBPF_ATOMIC_OPCODE_64: {
+			switch (inst.imm) {
+			case EBPF_ATOMIC_ADD:
+			case EBPF_ATOMIC_ADD | EBPF_ATOMIC_OP_FETCH: {
+				break;
+			}
+
+			case EBPF_ATOMIC_AND:
+			case EBPF_ATOMIC_AND | EBPF_ATOMIC_OP_FETCH: {
+
+				break;
+			}
+
+			case EBPF_ATOMIC_OR:
+			case EBPF_ATOMIC_OR | EBPF_ATOMIC_OP_FETCH: {
+
+				break;
+			}
+			case EBPF_ATOMIC_XOR:
+			case EBPF_ATOMIC_XOR | EBPF_ATOMIC_OP_FETCH: {
+
+				break;
+			}
+			case EBPF_ATOMIC_OP_XCHG: {
+
+				break;
+			}
+			case EBPF_ATOMIC_OP_CMPXCHG: {
+
+				break;
+			}
+			default: {
+				// return llvm::make_error<llvm::StringError>(
+				// 	"Unsupported atomic operation: " +
+				// 		std::to_string(inst.imm),
+				// 	llvm::inconvertibleErrorCode());
+			}
+			}
+			break;
+		}
+		default: {}
+			// return llvm::make_error<llvm::StringError>(
+			// 	"Unsupported or illegal opcode: " +
+			// 		std::to_string(inst.code) +
+			// 		" at pc " + std::to_string(pc),
+			// 	llvm::inconvertibleErrorCode());
+		}
     }
 
     // Handle branching for blocks
