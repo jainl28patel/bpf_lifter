@@ -28,6 +28,8 @@ bool Decompiler::process_elf(elfio &elf, std::string& object_file)
     */
 
     // iterate over all section and store information
+    // TODO: Handle for Maps and helper funct etc
+    // .relxdp contains info for file desc patching of maps
     for(auto&sec : elf.sections)
     {
         ELFSection sec_type = StringToELFSection(sec->get_name());
@@ -85,6 +87,8 @@ void Decompiler::lift_program(bpf_program *prog)
         auto cnt = bpf_program__insn_cnt(prog);
         while(cnt--) {
             instructions.push_back(*instr);
+            std::cout << static_cast<int>(instr->code) << std::endl;
+            instr++;
         }
 
         if(instructions.empty()) { 
@@ -505,6 +509,197 @@ void Decompiler::lift_program(bpf_program *prog)
 			// ubpf only supports EBPF_OP_LDDW in instruction class
 			// EBPF_CLS_LD, so do us
             // TODO: Implement this part
+            auto size = inst.code & 0x18;
+            auto mode = inst.code & 0xe0;
+            if (size != 0x18 || mode != 0x00) {
+				throw llvm::make_error<llvm::StringError>(
+					"Unsupported size (" +
+						std::to_string(size) +
+						") or mode (" +
+						std::to_string(mode) +
+						") for non-standard load operations" +
+						" at pc " + std::to_string(pc),
+					llvm::inconvertibleErrorCode());
+			}
+            if (pc + 1 >= instructions.size()) {
+				throw llvm::make_error<llvm::StringError>(
+					"Loaded LDDW at pc=" +
+						std::to_string(pc) +
+						" which requires an extra pseudo instruction, but it's the last instruction",
+					llvm::inconvertibleErrorCode());
+			}
+            const auto &nextinst = instructions[pc + 1];
+			if (nextinst.code || nextinst.dst_reg || nextinst.src_reg ||
+			    nextinst.off) {
+				throw llvm::make_error<llvm::StringError>(
+					"Loaded LDDW at pc=" +
+						std::to_string(pc) +
+						" which requires an extra pseudo instruction, but the next instruction is not a legal one",
+					llvm::inconvertibleErrorCode());
+			}
+            uint64_t val =
+				(uint64_t)((uint32_t)inst.imm) |
+				(((uint64_t)((uint32_t)nextinst.imm)) << 32);
+			pc++;
+
+            if (inst.src_reg== 0) {
+				builder.CreateStore(builder.getInt64(val),
+						    regs[inst.dst_reg]);
+			} else if (inst.src_reg= 1) {
+				if (vm.map_by_fd) {
+					builder.CreateStore(
+						builder.getInt64(
+							vm.map_by_fd(inst.imm)),
+						regs[inst.dst_reg]);
+				} else {
+					// Default: input value
+					builder.CreateStore(
+						builder.getInt64(
+							(int64_t)inst.imm),
+						regs[inst.dst_reg]);
+				}
+
+			// } else if (inst.src_reg == 2) {
+			// 	uint64_t mapPtr;
+			// 	if (vm.map_by_fd) {
+			// 		mapPtr = vm.map_by_fd(inst.imm);
+			// 	} else {
+			// 		// Default: returns the input value
+			// 		mapPtr = (uint64_t)inst.imm;
+			// 	}
+			// 	if (patch_map_val_at_compile_time) {
+			// 		if (!vm.map_val) {
+			// 			throw llvm::make_error<
+			// 				llvm::StringError>(
+			// 				"map_val is not provided, unable to compile at pc " +
+			// 					std::to_string(
+			// 						pc),
+			// 				llvm::inconvertibleErrorCode());
+			// 		}
+			// 		builder.CreateStore(
+			// 			builder.getInt64(
+			// 				vm.map_val(mapPtr) +
+			// 				nextinst.imm),
+			// 			regs[inst.dst_reg]);
+			// 	} else {
+			// 		SPDLOG_DEBUG(
+			// 			"map_val is required to be evaluated at runtime, emitting calling instructions");
+			// 		if (auto itrMapVal = lddwHelper.find(
+			// 			    LDDW_HELPER_MAP_VAL);
+			// 		    itrMapVal != lddwHelper.end()) {
+			// 			auto retMapVal = builder.CreateCall(
+			// 				lddwHelperWithUint64,
+			// 				itrMapVal->second,
+			// 				{ builder.getInt64(
+			// 					mapPtr) });
+			// 			auto finalRet = builder.CreateAdd(
+			// 				retMapVal,
+			// 				builder.getInt64(
+			// 					nextinst.imm));
+			// 			builder.CreateStore(
+			// 				finalRet,
+			// 				regs[inst.dst_reg]);
+
+			// 		} else {
+			// 			throw llvm::make_error<
+			// 				llvm::StringError>(
+			// 				"Using lddw helper 2, which requires map_val to be defined at pc " +
+			// 					std::to_string(
+			// 						pc),
+			// 				llvm::inconvertibleErrorCode());
+			// 		}
+			// 	}
+
+			// } else if (inst.src_reg== 3) {
+			// 	if (!vm.var_addr) {
+			// 		throw llvm::make_error<
+			// 			llvm::StringError>(
+			// 			"var_addr is not provided, unable to compile at pc " +
+			// 				std::to_string(pc),
+			// 			llvm::inconvertibleErrorCode());
+			// 	}
+			// 	builder.CreateStore(
+			// 		builder.getInt64(vm.var_addr(inst.imm)),
+			// 		regs[inst.dst_reg]);
+			// } else if (inst.src_reg == 4) {
+			// 	if (!vm.code_addr) {
+			// 		throw llvm::make_error<
+			// 			llvm::StringError>(
+			// 			"code_addr is not provided, unable to compile at pc " +
+			// 				std::to_string(pc),
+			// 			llvm::inconvertibleErrorCode());
+			// 	}
+			// 	builder.CreateStore(
+			// 		builder.getInt64(
+			// 			vm.code_addr(inst.imm)),
+			// 		regs[inst.dst_reg]);
+			// } else if (inst.src_reg == 5) {
+			// 	if (vm.map_by_idx) {
+			// 		builder.CreateStore(
+			// 			builder.getInt64(vm.map_by_idx(
+			// 				inst.imm)),
+			// 			regs[inst.dst_reg]);
+			// 	} else {
+			// 		// Default: returns the input value
+			// 		builder.CreateStore(
+			// 			builder.getInt64(
+			// 				(int64_t)inst.imm),
+			// 			regs[inst.dst_reg]);
+			// 	}
+
+			// } else if (inst.src_reg == 6) {
+			// 	uint64_t mapPtr;
+			// 	if (vm.map_by_idx) {
+			// 		mapPtr = vm.map_by_idx(inst.imm);
+			// 	} else {
+			// 		// Default: returns the input value
+			// 		mapPtr = (int64_t)inst.imm;
+			// 	}
+			// 	if (patch_map_val_at_compile_time) {
+			// 		if (vm.map_val) {
+			// 			builder.CreateStore(
+			// 				builder.getInt64(
+			// 					vm.map_val(
+			// 						mapPtr) +
+			// 					nextinst.imm),
+			// 				regs[inst.dst_reg]);
+			// 		} else {
+			// 			throw llvm::make_error<
+			// 				llvm::StringError>(
+			// 				"map_val is not provided, unable to compile at pc " +
+			// 					std::to_string(
+			// 						pc),
+			// 				llvm::inconvertibleErrorCode());
+			// 		}
+
+			// 	} else {
+			// 		if (auto itrMapVal = lddwHelper.find(
+			// 			    LDDW_HELPER_MAP_VAL);
+			// 		    itrMapVal != lddwHelper.end()) {
+			// 			auto retMapVal = builder.CreateCall(
+			// 				lddwHelperWithUint64,
+			// 				itrMapVal->second,
+			// 				{ builder.getInt64(
+			// 					mapPtr) });
+			// 			auto finalRet = builder.CreateAdd(
+			// 				retMapVal,
+			// 				builder.getInt64(
+			// 					nextinst.imm));
+			// 			builder.CreateStore(
+			// 				finalRet,
+			// 				regs[inst.dst_reg]);
+
+			// 		} else {
+			// 			throw llvm::make_error<
+			// 				llvm::StringError>(
+			// 				"Using lddw helper 6 at pc " +
+			// 					std::to_string(
+			// 						pc),
+			// 				llvm::inconvertibleErrorCode());
+			// 		}
+			// 	}
+			// }
+
 			break;
 		}
 			// JMP
@@ -512,7 +707,6 @@ void Decompiler::lift_program(bpf_program *prog)
             if (auto dst = loadJmpDstBlock(pc, inst, instBlocks);
 			    dst) {
 				builder.CreateBr(dst.get());
-
 			} else {
                 // TODO: Handler error
 				// return dst.takeError();
