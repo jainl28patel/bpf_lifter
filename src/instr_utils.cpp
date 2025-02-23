@@ -311,44 +311,20 @@ llvm::Expected<int> emitCondJmpWithDstAndSrc(
 	}
 }
 
-// llvm::Expected<int>
-// emitExtFuncCall(llvm::IRBuilder<> &builder, const bpf_insn &inst,
-// 		const std::map<std::string, llvm::Function *> &extFunc,
-// 		llvm::Value **regs, llvm::FunctionType *helperFuncTy,
-// 		uint16_t pc, llvm::BasicBlock *exitBlk)
-// {
-// 	auto funcNameToCall = ext_func_sym(inst.imm);
-// 	if (auto itr = extFunc.find(funcNameToCall); itr != extFunc.end()) {
-// 		SPDLOG_DEBUG("Emitting ext func call to {} name {} at pc {}",
-// 			     inst.imm, funcNameToCall, pc);
-// 		auto callInst = builder.CreateCall(
-// 			helperFuncTy, itr->second,
-// 			{
-// 				builder.CreateLoad(builder.getInt64Ty(),
-// 						   regs[1]),
-// 				builder.CreateLoad(builder.getInt64Ty(),
-// 						   regs[2]),
-// 				builder.CreateLoad(builder.getInt64Ty(),
-// 						   regs[3]),
-// 				builder.CreateLoad(builder.getInt64Ty(),
-// 						   regs[4]),
-// 				builder.CreateLoad(builder.getInt64Ty(),
-// 						   regs[5]),
-
-// 			});
-// 		builder.CreateStore(callInst, regs[0]);
-// 		// for bpf_tail_call, just exit after calling the helper, which
-// 		// simulates the behavior of kernel
-// 		if (inst.imm == 12) {
-// 			builder.CreateBr(exitBlk);
-// 		}
-// 		return 0;
-// 	} else {
-// 		return llvm::make_error<llvm::StringError>(
-// 			"Ext func not found: " + funcNameToCall,
-// 			llvm::inconvertibleErrorCode());
-// 	}
-// }
+void 
+emitExtFuncCall(llvm::IRBuilder<> &builder, const bpf_insn &inst,
+		llvm::Value **regs, uint16_t pc, llvm::BasicBlock *exitBlk,
+		llvm::FunctionType *helperFuncTy, llvm::Value* currFunc,
+		llvm::ArrayRef<llvm::Value *> Args)
+{
+	auto callInst = builder.CreateCall(helperFuncTy, currFunc, Args);
+	builder.CreateStore(callInst, regs[0]);
+	// for bpf_tail_call, just exit after calling the helper, which
+	// simulates the behavior of kernel
+	if (inst.imm == 12) {
+		builder.CreateBr(exitBlk);
+	}
+}
 
 void emitAtomicBinOp(llvm::IRBuilder<> &builder, llvm::Value **regs,
 		     llvm::AtomicRMWInst::BinOp op, const bpf_insn &inst,

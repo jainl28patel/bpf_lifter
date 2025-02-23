@@ -11,14 +11,23 @@
 #include <llvm/Support/Error.h>
 #include <llvm/IR/Value.h>
 #include <llvm/IR/IRBuilder.h>
+
 #include <map>
 #include <tuple>
 #include <utility>
+#include <unordered_map>
 
 #include <bpf_extern.h>
 #include <bpf_instr.h>
 
 using namespace llvm;
+
+struct helper_func_def {
+  int func_ptr;
+  std::string ret_type;
+  std::string func_name;
+  int num_args;
+};
 
 bool is_control_flow_split(bpf_insn& instruction);
 bool isValidBPFInstruction(bpf_insn& instruction);
@@ -79,11 +88,11 @@ const std::map<uint16_t, llvm::BasicBlock *> &instBlocks,
 llvm::Value **regs,
 std::function<llvm::Value *(llvm::Value *, llvm::Value *)> func);
 
-llvm::Expected<int>
+void
 emitExtFuncCall(llvm::IRBuilder<> &builder, const bpf_insn &inst,
-const std::map<std::string, llvm::Function *> &extFunc,
-llvm::Value **regs, llvm::FunctionType *helperFuncTy,
-uint16_t pc, llvm::BasicBlock *exitBlk);
+  llvm::Value **regs, uint16_t pc, llvm::BasicBlock *exitBlk,
+  llvm::FunctionType *helperFuncTy, llvm::Value* currFunc,
+  llvm::ArrayRef<llvm::Value *> Args);
 void emitAtomicBinOp(llvm::IRBuilder<> &builder, llvm::Value **regs,
 llvm::AtomicRMWInst::BinOp op, const bpf_insn &inst,
 bool is64, bool is_fetch);

@@ -3,7 +3,31 @@
 Decompiler::Decompiler(std::string& out_file)
     : out_file(out_file)
 {
+	// load helper function definitions
+	std::ifstream csv("/home/jainil/Draco/bpf_lifter/scripts/bpf_function_data.csv");
+	std::string line;
+	while(std::getline(csv, line)) {
+		helper_func_def data;
+		int l = 0,r;
+		r = line.find(',',l);
+		data.func_ptr = std::stoi(line.substr(l,r));
 
+		l=r;
+		r = line.find(',',l);
+		data.ret_type = line.substr(l,r);
+
+		l=r;
+		r = line.find(',',l);
+		data.func_name = line.substr(l,r);
+
+		l=r;
+		r = line.find(',',l);
+		data.num_args = std::stoi(line.substr(l,r));
+
+		this->helper_func_metadata[data.func_ptr] = data;
+	}
+
+	csv.close();
 }
 
 void Decompiler::getIR(bpf_program* prog)
@@ -206,7 +230,56 @@ void Decompiler::lift_program(bpf_program *prog)
     }
 
     // Last block / exit block
-    // TODO
+    // Basic block used to exit the eBPF program
+	// will read r0 and return it
+	BasicBlock *exitBlk = BasicBlock::Create(*context, "exitBlock", bpf_func);
+	{
+		IRBuilder<> builder(exitBlk);
+		builder.CreateRet(
+			builder.CreateLoad(builder.getInt64Ty(), regs[0]));
+	}
+
+
+	// Defining different helper function types
+	FunctionType *helper_func_0 = FunctionType::get(
+		Type::getInt64Ty(*context),
+		{},
+		false
+	);
+	
+	FunctionType *helper_func_1 = FunctionType::get(
+		Type::getInt64Ty(*context),
+		{Type::getInt64Ty(*context)},
+		false
+	);
+
+	FunctionType *helper_func_2 = FunctionType::get(
+		Type::getInt64Ty(*context),
+		{Type::getInt64Ty(*context),Type::getInt64Ty(*context)},
+		false
+	);
+
+	FunctionType *helper_func_3 = FunctionType::get(
+		Type::getInt64Ty(*context),
+		{Type::getInt64Ty(*context),Type::getInt64Ty(*context),
+		 	Type::getInt64Ty(*context)},
+		false
+	);
+
+	FunctionType *helper_func_4 = FunctionType::get(
+		Type::getInt64Ty(*context),
+		{Type::getInt64Ty(*context),Type::getInt64Ty(*context),
+			Type::getInt64Ty(*context),Type::getInt64Ty(*context)},
+		false
+	);
+
+	FunctionType *helper_func_5 = FunctionType::get(
+		Type::getInt64Ty(*context),
+		{Type::getInt64Ty(*context),Type::getInt64Ty(*context),
+			Type::getInt64Ty(*context),Type::getInt64Ty(*context),
+			Type::getInt64Ty(*context)},
+		false
+	);
 
     // Handling of return from local function call
     // TODO
@@ -729,10 +802,10 @@ void Decompiler::lift_program(bpf_program *prog)
 					builder.getInt64(5));
 
 				builder.CreateStore(nextPos, callItemCnt);
-				assert(localFuncRetBlks.contains(pc + 1));
+				// assert(localFuncRetBlock.contains(pc + 1));
 				// Store returning address
 				builder.CreateStore(
-					localFuncRetBlks[pc + 1],
+					localFuncRetBlock[pc + 1],
 					builder.CreateGEP(
 						llvm::PointerType::get(builder.getContext(), 0), callStack,
 						{ builder.CreateSub(
@@ -772,12 +845,78 @@ void Decompiler::lift_program(bpf_program *prog)
 				}
 			} else {
 				// TODO: Implement external function call [Important]
-				// if (auto exp = emitExtFuncCall(
-				// 		builder, inst, extFunc, &regs[0],
-				// 		helperFuncTy, pc, exitBlk);
-				// 	!exp) {
-				// 	return exp.takeError();
-				// }
+				if(this->helper_func_metadata.find(inst.imm) == this->helper_func_metadata.end()) {
+					throw "No such helper function found for external call";
+				}
+				switch (this->helper_func_metadata[inst.imm].func_ptr)
+				{
+				case 0: {
+					auto currFunc = Function::Create(helper_func_0,
+						Function::ExternalLinkage,
+						this->helper_func_metadata[inst.imm].func_name, jitModule.get());
+					emitExtFuncCall( builder, inst, &regs[0], pc, exitBlk, helper_func_0, currFunc,{});
+					break;
+				}
+				case 1: {
+					auto currFunc = Function::Create(helper_func_1,
+						Function::ExternalLinkage,
+						this->helper_func_metadata[inst.imm].func_name, jitModule.get());
+					emitExtFuncCall( builder, inst, &regs[0], pc, exitBlk, helper_func_1, currFunc,{
+						builder.CreateLoad(builder.getInt64Ty(), regs[1])
+					});
+					break;
+				}
+				case 2: {
+					auto currFunc = Function::Create(helper_func_2,
+						Function::ExternalLinkage,
+						this->helper_func_metadata[inst.imm].func_name, jitModule.get());
+					emitExtFuncCall( builder, inst, &regs[0], pc, exitBlk, helper_func_2, currFunc,{
+						builder.CreateLoad(builder.getInt64Ty(), regs[1]),
+						builder.CreateLoad(builder.getInt64Ty(), regs[2])
+					});
+					break;
+				}
+				case 3: {
+					auto currFunc = Function::Create(helper_func_3,
+						Function::ExternalLinkage,
+						this->helper_func_metadata[inst.imm].func_name, jitModule.get());
+					emitExtFuncCall( builder, inst, &regs[0], pc, exitBlk, helper_func_3, currFunc,{
+						builder.CreateLoad(builder.getInt64Ty(), regs[1]),
+						builder.CreateLoad(builder.getInt64Ty(), regs[2]),
+						builder.CreateLoad(builder.getInt64Ty(), regs[3])
+					});
+					break;
+				}
+				case 4: {
+					auto currFunc = Function::Create(helper_func_4,
+						Function::ExternalLinkage,
+						this->helper_func_metadata[inst.imm].func_name, jitModule.get());
+					emitExtFuncCall( builder, inst, &regs[0], pc, exitBlk, helper_func_4, currFunc,{
+						builder.CreateLoad(builder.getInt64Ty(), regs[1]),
+						builder.CreateLoad(builder.getInt64Ty(), regs[2]),
+						builder.CreateLoad(builder.getInt64Ty(), regs[3]),
+						builder.CreateLoad(builder.getInt64Ty(), regs[4])
+					});
+					break;
+				}
+				case 5: {
+					auto currFunc = Function::Create(helper_func_5,
+						Function::ExternalLinkage,
+						this->helper_func_metadata[inst.imm].func_name, jitModule.get());
+					emitExtFuncCall( builder, inst, &regs[0], pc, exitBlk, helper_func_5, currFunc,{
+						builder.CreateLoad(builder.getInt64Ty(), regs[1]),
+						builder.CreateLoad(builder.getInt64Ty(), regs[2]),
+						builder.CreateLoad(builder.getInt64Ty(), regs[3]),
+						builder.CreateLoad(builder.getInt64Ty(), regs[4]),
+						builder.CreateLoad(builder.getInt64Ty(), regs[5])
+					});
+					break;
+				}
+				
+				default:
+					throw "Argument count is not valid for helper function";
+					break;
+				}
 			}
 
 			break;

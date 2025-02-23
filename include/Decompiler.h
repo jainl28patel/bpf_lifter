@@ -31,6 +31,7 @@ class Decompiler
 private:
     std::string out_file;
     std::unordered_map<std::string, FunctionData> funcs; // name -> data
+    std::unordered_map<int, helper_func_def> helper_func_metadata; // ptr -> data
 
 public:
 
