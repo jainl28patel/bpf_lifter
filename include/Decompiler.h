@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <cassert>
 
 // from source code
 #include <bpf_extern.h>
@@ -17,6 +18,12 @@
 
 using namespace ELFIO;
 using namespace llvm;
+
+const int EBPF_STACK_SIZE = 512;
+const int STACK_SIZE = (EBPF_STACK_SIZE + 7) / 8;
+const int CALL_STACK_SIZE = 64;
+const size_t MAX_LOCAL_FUNC_DEPTH = 32;
+
 
 // contains the main logic to lift each program bytecode to IR
 class Decompiler

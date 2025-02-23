@@ -117,7 +117,7 @@ void Decompiler::lift_program(bpf_program *prog)
     std::vector<Value *> regs;
 	std::vector<BasicBlock*> progBasicBlock;;
 	// Stack used to save return address and saved registers
-	// Value *callStack, *callItemCnt;
+	Value *callStack, *callItemCnt;
 	{
 		BasicBlock *setupBlock =
 			BasicBlock::Create(*context, "setupBlock", bpf_func);
@@ -130,29 +130,29 @@ void Decompiler::lift_program(bpf_program *prog)
 				builder.getInt64Ty(), nullptr,
 				"r" + std::to_string(i)));
 		}
-		// // Create stack
-		// auto stackBegin = builder.CreateAlloca(
-		// 	builder.getInt64Ty(),
-		// 	builder.getInt32(STACK_SIZE * MAX_LOCAL_FUNC_DEPTH +
-		// 			 10),
-		// 	"stackBegin");
-		// auto stackEnd = builder.CreateGEP(
-		// 	builder.getInt64Ty(), stackBegin,
-		// 	{ builder.getInt32(STACK_SIZE * MAX_LOCAL_FUNC_DEPTH) },
-		// 	"stackEnd");
-		// // Write stack pointer into r10
-		// builder.CreateStore(stackEnd, regs[10]);
-		// // Write memory address into r1
-		// builder.CreateStore(mem, regs[1]);
-		// // Write memory len into r1
-		// builder.CreateStore(mem_len, regs[2]);
+		// Create stack
+		auto stackBegin = builder.CreateAlloca(
+			builder.getInt64Ty(),
+			builder.getInt32(STACK_SIZE * MAX_LOCAL_FUNC_DEPTH +
+					 10),
+			"stackBegin");
+		auto stackEnd = builder.CreateGEP(
+			builder.getInt64Ty(), stackBegin,
+			{ builder.getInt32(STACK_SIZE * MAX_LOCAL_FUNC_DEPTH) },
+			"stackEnd");
+		// Write stack pointer into r10
+		builder.CreateStore(stackEnd, regs[10]);
+		// Write memory address into r1
+		builder.CreateStore(mem, regs[1]);
+		// Write memory len into r1
+		builder.CreateStore(mem_len, regs[2]);
 
-		// callStack = builder.CreateAlloca(
-		// 	builder.getPtrTy(),
-		// 	builder.getInt32(CALL_STACK_SIZE * 5), "callStack");
-		// callItemCnt = builder.CreateAlloca(builder.getInt64Ty(),
-		// 				   nullptr, "callItemCnt");
-		// builder.CreateStore(builder.getInt64(0), callItemCnt);
+		callStack = builder.CreateAlloca(
+			llvm::PointerType::get(builder.getContext(), 0),
+			builder.getInt32(CALL_STACK_SIZE * 5), "callStack");
+		callItemCnt = builder.CreateAlloca(builder.getInt64Ty(),
+						   nullptr, "callItemCnt");
+		builder.CreateStore(builder.getInt64(0), callItemCnt);
 	}
 
     // Now split the instructions into basic blocks
@@ -542,22 +542,24 @@ void Decompiler::lift_program(bpf_program *prog)
 				(((uint64_t)((uint32_t)nextinst.imm)) << 32);
 			pc++;
 
+			// For now only implement for test program which has immediate value to load (xdp_reader)
             if (inst.src_reg== 0) {
 				builder.CreateStore(builder.getInt64(val),
 						    regs[inst.dst_reg]);
-			} else if (inst.src_reg= 1) {
-				if (vm.map_by_fd) {
-					builder.CreateStore(
-						builder.getInt64(
-							vm.map_by_fd(inst.imm)),
-						regs[inst.dst_reg]);
-				} else {
-					// Default: input value
-					builder.CreateStore(
-						builder.getInt64(
-							(int64_t)inst.imm),
-						regs[inst.dst_reg]);
-				}
+			} 
+			// else if (inst.src_reg= 1) {
+			// 	if (vm.map_by_fd) {
+			// 		builder.CreateStore(
+			// 			builder.getInt64(
+			// 				vm.map_by_fd(inst.imm)),
+			// 			regs[inst.dst_reg]);
+			// 	} else {
+			// 		// Default: input value
+			// 		builder.CreateStore(
+			// 			builder.getInt64(
+			// 				(int64_t)inst.imm),
+			// 			regs[inst.dst_reg]);
+			// 	}
 
 			// } else if (inst.src_reg == 2) {
 			// 	uint64_t mapPtr;
@@ -709,7 +711,7 @@ void Decompiler::lift_program(bpf_program *prog)
 				builder.CreateBr(dst.get());
 			} else {
                 // TODO: Handler error
-				// return dst.takeError();
+				throw dst.takeError();
 			}
 			break;
 		}
@@ -720,10 +722,68 @@ void Decompiler::lift_program(bpf_program *prog)
 		case EBPF_OP_CALL | 0x8: {
 			// Call local function
             // TODO: Implement
+			if (inst.src_reg == 0x1) {
+				Value *nextPos = builder.CreateAdd(
+					builder.CreateLoad(builder.getInt64Ty(),
+								callItemCnt),
+					builder.getInt64(5));
+
+				builder.CreateStore(nextPos, callItemCnt);
+				assert(localFuncRetBlks.contains(pc + 1));
+				// Store returning address
+				builder.CreateStore(
+					localFuncRetBlks[pc + 1],
+					builder.CreateGEP(
+						llvm::PointerType::get(builder.getContext(), 0), callStack,
+						{ builder.CreateSub(
+							nextPos,
+							builder.getInt64(1)) }));
+				// Store callee-saved registers
+				for (int i = 6; i <= 9; i++) {
+					builder.CreateStore(
+						builder.CreateLoad(
+							builder.getInt64Ty(),
+							regs[i]),
+						builder.CreateGEP(
+							builder.getInt64Ty(),
+							callStack,
+							{ builder.CreateSub(
+								nextPos,
+								builder.getInt64(
+									i -
+									4)) }));
+				}
+
+				// Move data stack
+				// r10 -= stackSize
+				builder.CreateStore(
+					builder.CreateSub(
+						builder.CreateLoad(
+							builder.getInt64Ty(),
+							regs[10]),
+						builder.getInt64(STACK_SIZE)),
+					regs[10]);
+				if (auto dstBlk = loadCallDstBlock(pc, inst,
+									instBlocks);
+					dstBlk) {
+					builder.CreateBr(dstBlk.get());
+				} else {
+					throw dstBlk.takeError();
+				}
+			} else {
+				// TODO: Implement external function call [Important]
+				// if (auto exp = emitExtFuncCall(
+				// 		builder, inst, extFunc, &regs[0],
+				// 		helperFuncTy, pc, exitBlk);
+				// 	!exp) {
+				// 	return exp.takeError();
+				// }
+			}
+
 			break;
 		}
 		case EBPF_OP_EXIT: {
-            // TODO: Implement
+            // TODO: Implement (based on our logic)
 			break;
 		}
 
