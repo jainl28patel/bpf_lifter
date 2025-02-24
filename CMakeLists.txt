@@ -4,8 +4,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(bpflifter)
 
+# Specify LLVM 15 paths explicitly
+set(LLVM_DIR "/usr/lib/llvm-15/lib/cmake/llvm" CACHE PATH "Path to LLVM 15 cmake dir")
+set(CMAKE_PREFIX_PATH "/usr/lib/llvm-15" ${CMAKE_PREFIX_PATH})
+
 # Find LLVM packages
-find_package(LLVM REQUIRED CONFIG)
+find_package(LLVM 15.0 REQUIRED CONFIG)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 

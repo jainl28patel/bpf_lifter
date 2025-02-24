@@ -120,7 +120,6 @@ void Decompiler::lift_program(bpf_program *prog)
         }
     }
 
-	std::cout << "------" << std::endl;
 
     // Function initialization and creation
     /*
@@ -139,7 +138,6 @@ void Decompiler::lift_program(bpf_program *prog)
     Argument *mem = bpf_func->getArg(0);
     Argument *mem_len = bpf_func->getArg(1);
 
-	std::cout << "Function creation done asfasdfasd" << std::endl;
 
 
     std::vector<llvm::Value *> regs;
@@ -170,7 +168,6 @@ void Decompiler::lift_program(bpf_program *prog)
 			"stackEnd");
 		// Write stack pointer into r10
 		auto val = llvm::cast<llvm::PointerType>(regs[0]->getType())->isOpaqueOrPointeeTypeMatches(stackEnd->getType());
-		std::cout << "val : " << val << std::endl;
 		builder.CreateStore(stackEnd, reinterpret_cast<llvm::Value*>(regs[10]));
 		// Write memory address into r1
 		builder.CreateStore(mem, regs[1]);
@@ -185,7 +182,6 @@ void Decompiler::lift_program(bpf_program *prog)
 		builder.CreateStore(builder.getInt64(0), callItemCnt);
 	}
 
-	std::cout << "Stack done" << std::endl;
 
     // Now split the instructions into basic blocks
     /*
@@ -217,7 +213,6 @@ void Decompiler::lift_program(bpf_program *prog)
         }
     }
 
-	std::cout << "Block done" << std::endl;
 
     // link different basic blocks
     std::map<uint16_t, BlockAddress*> localFuncRetBlock; // TODO
@@ -247,7 +242,6 @@ void Decompiler::lift_program(bpf_program *prog)
         }
     }
 
-	std::cout << "Basic Block creation done" << std::endl;
 
     // Last block / exit block
     // Basic block used to exit the eBPF program
@@ -301,7 +295,6 @@ void Decompiler::lift_program(bpf_program *prog)
 		false
 	);
 
-	std::cout << "helper func type done" << std::endl;
 
     // Handling of return from local function call
     // TODO
@@ -348,13 +341,11 @@ void Decompiler::lift_program(bpf_program *prog)
 		}
 	}
 
-	std::cout << "Return blocks done" << std::endl;
 
     // Iterate over all instructions and convert
     BasicBlock* currBlock = instBlocks[0];
     IRBuilder<> builder(currBlock);
 
-	std::cout << "Iteration begins" << std::endl;
 
     for(uint16_t pc = 0; pc < instructions.size(); pc++) {
         auto& inst = instructions[pc];
@@ -562,7 +553,6 @@ void Decompiler::lift_program(bpf_program *prog)
 		case EBPF_OP_MOV_IMM:
 		case EBPF_OP_MOV64_REG:
 		case EBPF_OP_MOV_REG: {
-			std::cout << "mov" << std::endl;
             Value *src_val =
 				emitLoadALUSource(inst, &regs[0], builder);
 			Value *result = src_val;
