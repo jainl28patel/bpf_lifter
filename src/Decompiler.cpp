@@ -10,19 +10,19 @@ Decompiler::Decompiler(std::string& out_file)
 		helper_func_def data;
 		int l = 0,r;
 		r = line.find(',',l);
-		data.func_ptr = std::stoi(line.substr(l,r));
+		data.func_ptr = std::stoi(line.substr(l,r-l));
 
 		l=r;
-		r = line.find(',',l);
-		data.ret_type = line.substr(l,r);
+		r = line.find(',',l+1);
+		data.ret_type = line.substr(l+1,r-l-1);
 
 		l=r;
-		r = line.find(',',l);
-		data.func_name = line.substr(l,r);
+		r = line.find(',',l+1);
+		data.func_name = line.substr(l+1,r-l-1);
 
 		l=r;
-		r = line.find(',',l);
-		data.num_args = std::stoi(line.substr(l,r));
+		r = line.size();
+		data.num_args = std::stoi(line.substr(l+1,r-l-1));
 
 		this->helper_func_metadata[data.func_ptr] = data;
 	}
@@ -120,6 +120,8 @@ void Decompiler::lift_program(bpf_program *prog)
         }
     }
 
+	std::cout << "------" << std::endl;
+
     // Function initialization and creation
     /*
         TODO: Decide the function type, for now going with llvmbpf implementation
@@ -137,8 +139,10 @@ void Decompiler::lift_program(bpf_program *prog)
     Argument *mem = bpf_func->getArg(0);
     Argument *mem_len = bpf_func->getArg(1);
 
+	std::cout << "Function creation done asfasdfasd" << std::endl;
 
-    std::vector<Value *> regs;
+
+    std::vector<llvm::Value *> regs;
 	std::vector<BasicBlock*> progBasicBlock;;
 	// Stack used to save return address and saved registers
 	Value *callStack, *callItemCnt;
@@ -165,7 +169,9 @@ void Decompiler::lift_program(bpf_program *prog)
 			{ builder.getInt32(STACK_SIZE * MAX_LOCAL_FUNC_DEPTH) },
 			"stackEnd");
 		// Write stack pointer into r10
-		builder.CreateStore(stackEnd, regs[10]);
+		auto val = llvm::cast<llvm::PointerType>(regs[0]->getType())->isOpaqueOrPointeeTypeMatches(stackEnd->getType());
+		std::cout << "val : " << val << std::endl;
+		builder.CreateStore(stackEnd, reinterpret_cast<llvm::Value*>(regs[10]));
 		// Write memory address into r1
 		builder.CreateStore(mem, regs[1]);
 		// Write memory len into r1
@@ -178,6 +184,8 @@ void Decompiler::lift_program(bpf_program *prog)
 						   nullptr, "callItemCnt");
 		builder.CreateStore(builder.getInt64(0), callItemCnt);
 	}
+
+	std::cout << "Stack done" << std::endl;
 
     // Now split the instructions into basic blocks
     /*
@@ -209,6 +217,8 @@ void Decompiler::lift_program(bpf_program *prog)
         }
     }
 
+	std::cout << "Block done" << std::endl;
+
     // link different basic blocks
     std::map<uint16_t, BlockAddress*> localFuncRetBlock; // TODO
     std::map<uint16_t, BasicBlock*> instBlocks;
@@ -225,9 +235,19 @@ void Decompiler::lift_program(bpf_program *prog)
 
                 // if this block is instruction of local function call
                 // TODO
+				if (i > 1 &&
+				    instructions[i - 1].code == EBPF_OP_CALL &&
+				    instructions[i - 1].src_reg == 0x01) {
+					auto blockAddr =
+						llvm::BlockAddress::get(
+							bpf_func, curr_block);
+					localFuncRetBlock[i] = blockAddr;
+				}
             }
         }
     }
+
+	std::cout << "Basic Block creation done" << std::endl;
 
     // Last block / exit block
     // Basic block used to exit the eBPF program
@@ -281,15 +301,65 @@ void Decompiler::lift_program(bpf_program *prog)
 		false
 	);
 
+	std::cout << "helper func type done" << std::endl;
+
     // Handling of return from local function call
     // TODO
+	BasicBlock *localRetBlk =
+		BasicBlock::Create(*context, "localFuncReturnBlock", bpf_func);
+	{
+		// The most top one is the returning address, followed by r6,
+		// r7, r8, r9
+		IRBuilder<> builder(localRetBlk);
+		Value *count =
+			builder.CreateLoad(builder.getInt64Ty(), callItemCnt);
+		// Load return address
+		Value *targetAddr = builder.CreateLoad(
+			llvm::PointerType::get(builder.getContext(), 0),
+			builder.CreateGEP(llvm::PointerType::get(builder.getContext(), 0),
+				callStack, { builder.CreateSub(count, builder.getInt64(1)) }));
+		// Restore registers
+		for (int i = 6; i <= 9; i++) {
+			builder.CreateStore(
+				builder.CreateLoad(
+					builder.getInt64Ty(),
+					builder.CreateGEP(
+						builder.getInt64Ty(), callStack,
+						{ builder.CreateSub(
+							count,
+							builder.getInt64(
+								i - 4)) })),
+				regs[i]);
+		}
+		builder.CreateStore(builder.CreateSub(count,
+						      builder.getInt64(5)),
+				    callItemCnt);
+		// Restore data stack
+		// r10 += stack_size
+		builder.CreateStore(
+			builder.CreateAdd(
+				builder.CreateLoad(builder.getInt64Ty(),
+						   regs[10]),
+				builder.getInt64(STACK_SIZE)),
+			regs[10]);
+		auto indrBr = builder.CreateIndirectBr(targetAddr);
+		for (const auto &item : localFuncRetBlock) {
+			indrBr->addDestination(instBlocks[item.first]);
+		}
+	}
+
+	std::cout << "Return blocks done" << std::endl;
 
     // Iterate over all instructions and convert
     BasicBlock* currBlock = instBlocks[0];
     IRBuilder<> builder(currBlock);
 
+	std::cout << "Iteration begins" << std::endl;
+
     for(uint16_t pc = 0; pc < instructions.size(); pc++) {
         auto& inst = instructions[pc];
+
+		std::cout << static_cast<int>(inst.code) << std::endl;
 
         // if new basic block start
         if(basicBlockStart[pc]) {
@@ -492,6 +562,7 @@ void Decompiler::lift_program(bpf_program *prog)
 		case EBPF_OP_MOV_IMM:
 		case EBPF_OP_MOV64_REG:
 		case EBPF_OP_MOV_REG: {
+			std::cout << "mov" << std::endl;
             Value *src_val =
 				emitLoadALUSource(inst, &regs[0], builder);
 			Value *result = src_val;
@@ -923,13 +994,19 @@ void Decompiler::lift_program(bpf_program *prog)
 		}
 		case EBPF_OP_EXIT: {
             // TODO: Implement (based on our logic)
+			builder.CreateCondBr(
+				builder.CreateICmpEQ(
+					builder.CreateLoad(builder.getInt64Ty(),
+							   callItemCnt),
+					builder.getInt64(0)),
+				exitBlk, localRetBlk);
 			break;
 		}
 
         // TODO: Implement error handler
 #define HANDLE_ERR(ret)                                                        \
     {                                                                      \
-        if (!ret);                                                      \                               
+        if (!ret);                                                      \
     }
     
 
@@ -1151,27 +1228,39 @@ void Decompiler::lift_program(bpf_program *prog)
 				break;
 			}
 			default: {
-				// return llvm::make_error<llvm::StringError>(
-				// 	"Unsupported atomic operation: " +
-				// 		std::to_string(inst.imm),
-				// 	llvm::inconvertibleErrorCode());
+				throw llvm::make_error<llvm::StringError>(
+					"Unsupported atomic operation: " +
+						std::to_string(inst.imm),
+					llvm::inconvertibleErrorCode());
 			}
 			}
 			break;
 		}
 		default: {}
-			// return llvm::make_error<llvm::StringError>(
-			// 	"Unsupported or illegal opcode: " +
-			// 		std::to_string(inst.code) +
-			// 		" at pc " + std::to_string(pc),
-			// 	llvm::inconvertibleErrorCode());
+			throw llvm::make_error<llvm::StringError>(
+				"Unsupported or illegal opcode: " +
+					std::to_string(inst.code) +
+					" at pc " + std::to_string(pc),
+				llvm::inconvertibleErrorCode());
 		}
     }
 
     // Handle branching for blocks
+	for (size_t i = 0; i < progBasicBlock.size() - 1; i++) {
+		auto &currBlk = progBasicBlock[i];
+		if (currBlk->getTerminator() == nullptr) {
+			builder.SetInsertPoint(progBasicBlock[i]);
+			builder.CreateBr(progBasicBlock[i + 1]);
+		}
+	}
 
     // Verify generated module
+	if (verifyModule(*jitModule, &dbgs())) {
+		throw llvm::make_error<llvm::StringError>(
+			"Invalid module generated",
+			llvm::inconvertibleErrorCode());
+	}
 
     // emit / store
-
+	// TODO
 }
