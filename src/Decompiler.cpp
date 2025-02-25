@@ -92,17 +92,25 @@ bool Decompiler::process_elf(elfio &elf, std::string& object_file)
         // now need to implement lifting for each function
 
         // lift each program
-        this->lift_program(prog);
+        auto module = this->lift_program(prog);
+		if(!module) {
+			std::cout << "some error" << std::endl;
+		} else {
+			// try dump the module
+			module->withModuleDo([&](auto &module) {
+				module.print(llvm::outs(), nullptr);
+			});
+		}
     }
 
     return true;
 }
 
-void Decompiler::lift_program(bpf_program *prog)
+Expected<llvm::orc::ThreadSafeModule> Decompiler::lift_program(bpf_program *prog)
 {
     // Initialization
     auto context = std::make_unique<LLVMContext>();
-	auto jitModule = std::make_unique<Module>("bpf-jit", *context);
+	auto jitModule = std::make_unique<Module>("lifter-bpf-program", *context);
     auto prog_name = bpf_program__name(prog);
     std::vector<bpf_insn> instructions;
     {
@@ -111,13 +119,13 @@ void Decompiler::lift_program(bpf_program *prog)
         auto cnt = bpf_program__insn_cnt(prog);
         while(cnt--) {
             instructions.push_back(*instr);
-            std::cout << static_cast<int>(instr->code) << std::endl;
+            // std::cout << static_cast<int>(instr->code) << std::endl;
             instr++;
         }
 
-        if(instructions.empty()) { 
-            return;
-        }
+        // if(instructions.empty()) { 
+        //     return nullptr;
+        // }
     }
 
 
@@ -350,7 +358,7 @@ void Decompiler::lift_program(bpf_program *prog)
     for(uint16_t pc = 0; pc < instructions.size(); pc++) {
         auto& inst = instructions[pc];
 
-		std::cout << static_cast<int>(inst.code) << std::endl;
+		// std::cout << static_cast<int>(inst.code) << std::endl;
 
         // if new basic block start
         if(basicBlockStart[pc]) {
@@ -1250,6 +1258,8 @@ void Decompiler::lift_program(bpf_program *prog)
 			"Invalid module generated",
 			llvm::inconvertibleErrorCode());
 	}
+
+	return llvm::orc::ThreadSafeModule(std::move(jitModule), std::move(context));
 
     // emit / store
 	// TODO

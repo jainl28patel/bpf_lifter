@@ -16,6 +16,7 @@
 #include <llvm/IR/Function.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
 
 using namespace ELFIO;
 using namespace llvm;
@@ -46,5 +47,5 @@ public:
 private:
 
     Decompiler();
-    void lift_program(bpf_program* prog);
+    Expected<llvm::orc::ThreadSafeModule> lift_program(bpf_program* prog);
 };
