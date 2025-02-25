@@ -917,7 +917,7 @@ Expected<llvm::orc::ThreadSafeModule> Decompiler::lift_program(bpf_program *prog
 				if(this->helper_func_metadata.find(inst.imm) == this->helper_func_metadata.end()) {
 					throw "No such helper function found for external call";
 				}
-				switch (this->helper_func_metadata[inst.imm].func_ptr)
+				switch (this->helper_func_metadata[inst.imm].num_args)
 				{
 				case 0: {
 					auto currFunc = Function::Create(helper_func_0,
